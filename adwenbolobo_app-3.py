@@ -3,7 +3,7 @@ import json
 from typing import List, Dict
 import pdfplumber
 
-# -- Helper Functions --
+# -------- Helper Functions --------
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
     """Load questions from JSON string."""
@@ -16,9 +16,9 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
-    """Load questions from text string based on specific format."""
+    """Parse questions from text format."""
     questions = []
-    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
+    blocks = text.strip().split('\n\n')  # Each question block separated by 2 newlines
     for block in blocks:
         lines = block.strip().split('\n')
         question = ''
@@ -57,7 +57,7 @@ def load_questions_from_text(text: str) -> List[Dict]:
     return questions
 
 def load_questions_from_pdf(file) -> List[Dict]:
-    """Load questions from PDF file using pdfplumber."""
+    """Extract text from PDF and parse questions."""
     try:
         text = ''
         with pdfplumber.open(file) as pdf:
@@ -70,7 +70,7 @@ def load_questions_from_pdf(file) -> List[Dict]:
         st.error(f"Failed to load PDF questions: {e}")
         return []
 
-# -- Default Question Bank --
+# -------- Default Questions --------
 DEFAULT_QUESTIONS = [
     {
         'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
@@ -86,7 +86,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -- Initialize Session State Variables --
+# -------- Initialize Session State --------
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -108,37 +108,37 @@ if 'review_mode' not in st.session_state:
 if 'answers_log' not in st.session_state:
     st.session_state.answers_log = []
 
-# -- App Title --
+# -------- App UI --------
+
 st.title("adwenBolobo: USMLE Practice App")
 
-# -- Upload Your Own Questions --
 with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
-    st.write("For TXT and PDF files, please use this format:")
+    st.write("For TXT and PDF files, use this exact format:")
     st.code("""
-Question: <question text>
+Question: What is the primary neurotransmitter at the neuromuscular junction?
 Options:
-A. <option1>
-B. <option2>
-C. <option3>
-D. <option4>
-Answer: <correct option letter>
-Explanation: <explanation text>
+A. Dopamine
+B. Acetylcholine
+C. GABA
+D. Serotonin
+Answer: B
+Explanation: Acetylcholine stimulates muscle contraction at the neuromuscular junction.
     """)
     uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
     if uploaded_file is not None:
         file_type = uploaded_file.type
         if file_type == 'application/json':
-            file_content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_json(file_content)
+            content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_json(content)
         elif file_type == 'text/plain':
-            file_content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_text(file_content)
+            content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_text(content)
         elif file_type == 'application/pdf':
             loaded_questions = load_questions_from_pdf(uploaded_file)
         else:
-            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
+            st.error("Unsupported file type. Upload JSON, TXT, or PDF only.")
             loaded_questions = []
-        
+
         if loaded_questions:
             st.session_state.questions = loaded_questions
             st.session_state.score = 0
@@ -147,22 +147,23 @@ Explanation: <explanation text>
             st.session_state.user_answer = None
             st.session_state.review_mode = False
             st.session_state.answers_log = []
-            st.success("Questions uploaded successfully! Starting fresh.")
+            st.success("Questions uploaded successfully! Starting new test.")
             st.experimental_rerun()
         else:
-            st.error("No valid questions found in the file. Please check the format.")
+            st.error("No valid questions found. Check your file format.")
 
-# -- Review Mode --
+# ------ Review Mode ------
 if st.session_state.review_mode:
-    st.header("Review Mode")
+    st.header("Review Your Answers")
     for idx, entry in enumerate(st.session_state.answers_log):
-        st.write(f"**Q{idx + 1}:** {entry['question']}")
-        st.write(f"Your answer: {entry['user_answer']}")
+        st.markdown(f"### Question {idx + 1}")
+        st.write(entry['question'])
+        st.write(f"Your answer: **{entry['user_answer']}**")
         if entry['user_answer'] == entry['correct_answer']:
             st.success("Correct")
         else:
             st.error(f"Incorrect (Correct: {entry['correct_answer']})")
-        st.write(f"Explanation: {entry['explanation']}")
+        st.info(f"Explanation: {entry['explanation']}")
         st.markdown("---")
     if st.button("Restart Test"):
         st.session_state.score = 0
@@ -173,14 +174,13 @@ if st.session_state.review_mode:
         st.session_state.answers_log = []
         st.experimental_rerun()
 
-# -- Quiz Mode --
+# ------ Quiz Mode ------
 else:
     if st.session_state.current_q < len(st.session_state.questions):
         q = st.session_state.questions[st.session_state.current_q]
-        st.write(f"**Question {st.session_state.current_q + 1} / {len(st.session_state.questions)}**")
+        st.markdown(f"### Question {st.session_state.current_q + 1} / {len(st.session_state.questions)}")
         st.write(q['question'])
 
-        # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], key='answer_radio')
 
         if not st.session_state.submitted:
@@ -197,12 +197,12 @@ else:
                 })
                 st.experimental_rerun()
         else:
-            # Show result & explanation
             if st.session_state.user_answer == q['answer']:
                 st.success("Correct!")
             else:
                 st.error(f"Incorrect. Correct answer: {q['answer']}")
             st.info(f"Explanation: {q['explanation']}")
+
             if st.button("Next Question"):
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
@@ -210,7 +210,6 @@ else:
                 st.experimental_rerun()
 
     else:
-        # Test complete
         st.header("Test Completed!")
         st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
         if st.button("Review Answers"):
