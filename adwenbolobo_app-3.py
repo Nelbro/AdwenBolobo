@@ -254,3 +254,41 @@ else:
             st.session_state.answers_log = []
             st.session_state.start_time = time.time()
             st.rerun()
+
+def format_to_quiz(text):
+    # Split by "Exam Section" or "Q Next" or obvious item delimiter
+    import re
+
+    # Use regex to find all exam items (by "Exam Section" or numbered "Item")
+    items = re.split(r'Exam Section \d+: Item \d+ of \d+|Q Next|(?=\d+\s*\.\s*[A-Z])', text)
+    formatted_questions = []
+    for item in items:
+        # Try to extract question, options, answer, explanation
+        # Question: Find the first sentence ending with a question mark or "is"
+        q_match = re.search(r'\d+\s*\.\s*(.+?)(?:\?|is )', item)
+        if not q_match:
+            continue
+        question = q_match.group(1).strip()
+        # Options: Find all single lettered options
+        options = re.findall(r'\b([A-E])[\)\.] ?([^\n]+)', item)
+        if not options or len(options) < 2:
+            continue
+        options_text = "\n".join([f"{chr(65+i)}. {opt[1].strip()}" for i, opt in enumerate(options)])
+        # Answer: Find "Correct Answer: X"
+        ans_match = re.search(r'Correct Answer: ([A-E])', item)
+        answer = ans_match.group(1).strip() if ans_match else "A"
+        # Explanation: use text after "Correct Answer" up to "Incorrect Answers" or end of block
+        exp_match = re.search(r'Correct Answer: [A-E][\)\.]? ([\s\S]+?)(?:Incorrect Answers:|Q Next|Exam Section|\Z)', item)
+        explanation = exp_match.group(1).strip() if exp_match else "No explanation provided."
+        formatted = f"""Question: {question}
+Options:
+{options_text}
+Answer: {answer}
+Explanation: {explanation}
+"""
+        formatted_questions.append(formatted)
+    return "\n\n".join(formatted_questions)
+
+# Example usage
+raw_text = """<your pasted block here>"""
+print(format_to_quiz(raw_text))
