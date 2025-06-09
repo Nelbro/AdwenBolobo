@@ -6,6 +6,7 @@ from typing import List, Dict
 # -- Helper Functions --
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
+    """Load questions from JSON string."""
     try:
         data = json.loads(json_str)
         assert isinstance(data, list)
@@ -15,8 +16,9 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
+    """Load questions from text string based on a specific format."""
     questions = []
-    blocks = text.strip().split('\n\n')
+    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
     for block in blocks:
         lines = block.strip().split('\n')
         question = ''
@@ -54,14 +56,21 @@ def load_questions_from_text(text: str) -> List[Dict]:
                 })
     return questions
 
-def extract_text_from_pdf(pdf_file) -> str:
-    text = ""
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text() + "\n"
-    return text
+def load_questions_from_pdf(file) -> List[Dict]:
+    """Load questions from a PDF file."""
+    try:
+        with pdfplumber.open(file) as pdf:
+            text = ''
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + '\n'
+        return load_questions_from_text(text)
+    except Exception as e:
+        st.error(f"Failed to load PDF questions: {e}")
+        return []
 
-# -- Default Questions --
+# -- Default Question Bank --
 DEFAULT_QUESTIONS = [
     {
         'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
@@ -77,7 +86,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -- Initialize Session State --
+# -- Initialize Session State Variables --
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -102,47 +111,49 @@ if 'answers_log' not in st.session_state:
 # -- App Title --
 st.title("adwenBolobo: USMLE Practice App")
 
-# -- Upload Your Own Questions --
-with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
-    st.write("For TXT and PDF files, use this format:")
-    st.code("""
-    Question: <question text>
-    Options:
-    A. <option1>
-    B. <option2>
-    C. <option3>
-    D. <option4>
-    Answer: <correct option letter>
-    Explanation: <explanation text>
-    """)
-    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
-    if uploaded_file is not None:
-        file_type = uploaded_file.type
-        if file_type == 'application/json':
-            file_content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_json(file_content)
-        elif file_type == 'text/plain':
-            file_content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_text(file_content)
-        elif file_type == 'application/pdf':
-            file_text = extract_text_from_pdf(uploaded_file)
-            loaded_questions = load_questions_from_text(file_text)
-        else:
-            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
-            loaded_questions = []
+# -- Sidebar for Upload --
+with st.sidebar:
+    st.title("adwenBolobo")
+    st.write("Practice USMLE questions with your own uploads or use defaults.")
+    with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
+        st.write("For TXT and PDF files, use this format:")
+        st.code("""
+        Question: <question text>
+        Options:
+        A. <option1>
+        B. <option2>
+        C. <option3>
+        D. <option4>
+        Answer: <correct option letter>
+        Explanation: <explanation text>
+        """)
+        uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+        if uploaded_file is not None:
+            file_type = uploaded_file.type
+            if file_type == 'application/json':
+                file_content = uploaded_file.read().decode("utf-8")
+                loaded_questions = load_questions_from_json(file_content)
+            elif file_type == 'text/plain':
+                file_content = uploaded_file.read().decode("utf-8")
+                loaded_questions = load_questions_from_text(file_content)
+            elif file_type == 'application/pdf':
+                loaded_questions = load_questions_from_pdf(uploaded_file)
+            else:
+                st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
+                loaded_questions = []
 
-        if loaded_questions:
-            st.session_state.questions = loaded_questions
-            st.session_state.score = 0
-            st.session_state.current_q = 0
-            st.session_state.submitted = False
-            st.session_state.user_answer = None
-            st.session_state.review_mode = False
-            st.session_state.answers_log = []
-            st.success("Questions uploaded successfully! Starting fresh.")
-            st.experimental_rerun()
-        else:
-            st.error("No valid questions found in the file. Please check the format.")
+            if loaded_questions:
+                st.session_state.questions = loaded_questions
+                st.session_state.score = 0
+                st.session_state.current_q = 0
+                st.session_state.submitted = False
+                st.session_state.user_answer = None
+                st.session_state.review_mode = False
+                st.session_state.answers_log = []
+                st.success("Questions uploaded successfully! Starting fresh.")
+                st.experimental_rerun()
+            else:
+                st.error("No valid questions found in the file. Please check the format.")
 
 # -- Review Mode --
 if st.session_state.review_mode:
@@ -168,10 +179,13 @@ if st.session_state.review_mode:
 # -- Quiz Mode --
 else:
     if st.session_state.current_q < len(st.session_state.questions):
+        progress = st.session_state.current_q / len(st.session_state.questions)
+        st.progress(progress)
         q = st.session_state.questions[st.session_state.current_q]
         st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
-        st.write(q['question'])
+        st.subheader(q['question'])
 
+        # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
         if not st.session_state.submitted:
