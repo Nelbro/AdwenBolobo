@@ -1,11 +1,11 @@
 import streamlit as st
 import json
+import pdfplumber
 from typing import List, Dict
 
 # -- Helper Functions --
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
-    """Load questions from JSON string."""
     try:
         data = json.loads(json_str)
         assert isinstance(data, list)
@@ -15,9 +15,8 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
-    """Load questions from text string based on a specific format."""
     questions = []
-    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
+    blocks = text.strip().split('\n\n')
     for block in blocks:
         lines = block.strip().split('\n')
         question = ''
@@ -55,7 +54,14 @@ def load_questions_from_text(text: str) -> List[Dict]:
                 })
     return questions
 
-# -- Default Question Bank --
+def extract_text_from_pdf(pdf_file) -> str:
+    text = ""
+    with pdfplumber.open(pdf_file) as pdf:
+        for page in pdf.pages:
+            text += page.extract_text() + "\n"
+    return text
+
+# -- Default Questions --
 DEFAULT_QUESTIONS = [
     {
         'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
@@ -71,7 +77,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -- Initialize Session State Variables --
+# -- Initialize Session State --
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -97,8 +103,8 @@ if 'answers_log' not in st.session_state:
 st.title("adwenBolobo: USMLE Practice App")
 
 # -- Upload Your Own Questions --
-with st.expander("Upload your own questions (JSON or TXT)"):
-    st.write("For TXT files, use this format:")
+with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
+    st.write("For TXT and PDF files, use this format:")
     st.code("""
     Question: <question text>
     Options:
@@ -109,7 +115,7 @@ with st.expander("Upload your own questions (JSON or TXT)"):
     Answer: <correct option letter>
     Explanation: <explanation text>
     """)
-    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt'])
+    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
     if uploaded_file is not None:
         file_type = uploaded_file.type
         if file_type == 'application/json':
@@ -118,8 +124,11 @@ with st.expander("Upload your own questions (JSON or TXT)"):
         elif file_type == 'text/plain':
             file_content = uploaded_file.read().decode("utf-8")
             loaded_questions = load_questions_from_text(file_content)
+        elif file_type == 'application/pdf':
+            file_text = extract_text_from_pdf(uploaded_file)
+            loaded_questions = load_questions_from_text(file_text)
         else:
-            st.error("Unsupported file type. Please upload a JSON or TXT file.")
+            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
             loaded_questions = []
 
         if loaded_questions:
@@ -163,7 +172,6 @@ else:
         st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
         st.write(q['question'])
 
-        # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
         if not st.session_state.submitted:
