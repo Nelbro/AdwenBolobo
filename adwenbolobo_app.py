@@ -27,8 +27,8 @@ def init_session_state():
         if k not in st.session_state:
             st.session_state[k] = v
 
-def load_questions_from_json(json_str: str) -> List[Dict]:
-    try:
+def load_questions_from_text(text: str) -> List[Dict]:
+    questions = []
         data = json.loads(json_str)
         assert isinstance(data, list)
         valid = []
