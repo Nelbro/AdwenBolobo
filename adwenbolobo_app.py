@@ -4,12 +4,10 @@
 
 Your GitHub repository should have the following structure:
 
-```
 adwenbolobo/
-├── app.py
-├── requirements.txt
-└── README.md
-```
+- app.py
+- requirements.txt
+- README.md
 
 ---
 
