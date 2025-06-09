@@ -1,5 +1,4 @@
 import streamlit as st
-import time
 import json
 from typing import List, Dict
 
@@ -55,14 +54,6 @@ def load_questions_from_text(text: str) -> List[Dict]:
                     'explanation': explanation.strip()
                 })
     return questions
-
-def timer(seconds: int):
-    """Display a countdown timer."""
-    placeholder = st.empty()
-    for remaining in range(seconds, 0, -1):
-        placeholder.markdown(f"⏳ Time left: **{remaining} seconds**")
-        time.sleep(1)
-    placeholder.empty()
 
 # -- Default Question Bank --
 DEFAULT_QUESTIONS = [
@@ -171,11 +162,6 @@ else:
         q = st.session_state.questions[st.session_state.current_q]
         st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
         st.write(q['question'])
-
-        # Timer (runs before submission)
-        if not st.session_state.submitted:
-            timer_seconds = 20  # 20 seconds per question
-            timer(timer_seconds)
 
         # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
