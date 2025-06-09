@@ -1,14 +1,19 @@
 import streamlit as st
 import json
 import re
-import pdfplumber
 import random
 import time
+
+# Try to import pdfplumber and handle if not installed
+try:
+    import pdfplumber
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+
 from typing import List, Dict
 
-# ----------------------
-# --- Helper Functions -
-# ----------------------
+# ------------- Helper Functions -------------
 
 def init_session_state():
     defaults = {
@@ -86,6 +91,9 @@ def load_questions_from_text(text: str) -> List[Dict]:
     return questions
 
 def load_questions_from_pdf(file) -> List[Dict]:
+    if not PDF_SUPPORT:
+        st.error("PDF upload requires the 'pdfplumber' library. Please install it via 'pip install pdfplumber' or add it to your requirements.txt.")
+        return []
     try:
         text = ''
         with pdfplumber.open(file) as pdf:
@@ -98,9 +106,7 @@ def load_questions_from_pdf(file) -> List[Dict]:
         st.error(f"Failed to load PDF questions: {e}")
         return []
 
-# -------------------------
-# --- Default Questions ----
-# -------------------------
+# ------------- Default Questions -------------
 DEFAULT_QUESTIONS = [
     {
         'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
@@ -116,9 +122,8 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -------------------------
-# --- UI Design & Logic ----
-# -------------------------
+# ------------- UI Design & Logic -------------
+
 st.set_page_config("adwenBolobo USMLE Quiz", page_icon="🧠", layout="centered")
 st.markdown("""
     <style>
@@ -153,7 +158,10 @@ D. <option4>
 Answer: <correct option letter>
 Explanation: <explanation text>
 """)
-    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+    accept_types = ['json', 'txt']
+    if PDF_SUPPORT:
+        accept_types.append('pdf')
+    uploaded_file = st.file_uploader("Upload questions", type=accept_types)
     if uploaded_file is not None:
         file_type = uploaded_file.type
         if file_type == 'application/json':
@@ -162,7 +170,7 @@ Explanation: <explanation text>
         elif file_type == 'text/plain':
             file_content = uploaded_file.read().decode("utf-8")
             loaded_questions = load_questions_from_text(file_content)
-        elif file_type == 'application/pdf':
+        elif PDF_SUPPORT and file_type == 'application/pdf':
             loaded_questions = load_questions_from_pdf(uploaded_file)
         else:
             st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
