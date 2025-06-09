@@ -147,7 +147,7 @@ Explanation: <explanation text>
             st.session_state.randomized = False
             st.session_state.start_time = time.time()
             st.success(f"{len(loaded_questions)} questions uploaded successfully! Starting fresh.")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("No valid questions found in the file. Please check the format.")
 
@@ -162,7 +162,7 @@ if not st.session_state.randomized and st.button("Randomize Questions"):
     st.session_state.randomized = True
     st.session_state.start_time = time.time()
     st.success("Questions randomized! Starting fresh.")
-    st.experimental_rerun()
+    st.rerun()
 
 # -- Review Mode --
 if st.session_state.review_mode:
@@ -184,7 +184,7 @@ if st.session_state.review_mode:
         st.session_state.review_mode = False
         st.session_state.answers_log = []
         st.session_state.start_time = time.time()
-        st.experimental_rerun()
+        st.rerun()
 
 # -- Quiz Mode --
 else:
@@ -206,7 +206,7 @@ else:
                 st.session_state.current_q -= 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if not st.session_state.submitted and st.button("Submit Answer"):
                 st.session_state.user_answer = user_answer
@@ -219,13 +219,13 @@ else:
                     'correct_answer': q['answer'],
                     'explanation': q['explanation']
                 })
-                st.experimental_rerun()
+                st.rerun()
         with col3:
             if st.button("Skip"):
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
+                st.rerun()
 
         if st.session_state.submitted:
             if st.session_state.user_answer == q['answer']:
@@ -237,14 +237,14 @@ else:
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
+                st.rerun()
     else:
         st.header("Test Completed!")
         st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
         st.info(f"Total time: {st.session_state['elapsed_time']} seconds")
         if st.button("Review Answers"):
             st.session_state.review_mode = True
-            st.experimental_rerun()
+            st.rerun()
         if st.button("Restart Test"):
             st.session_state.score = 0
             st.session_state.current_q = 0
@@ -253,4 +253,4 @@ else:
             st.session_state.review_mode = False
             st.session_state.answers_log = []
             st.session_state.start_time = time.time()
-            st.experimental_rerun()
+            st.rerun()
