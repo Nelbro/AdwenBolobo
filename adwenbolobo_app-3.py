@@ -1,14 +1,15 @@
 import streamlit as st
 import json
+import re
 from typing import List, Dict
-import pdfplumber
 
-# -------- Helper Functions --------
+# -- Helper Functions --
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
     """Load questions from JSON string."""
     try:
         data = json.loads(json_str)
+        # Expected format: List of dicts with 'question', 'options', 'answer', 'explanation'
         assert isinstance(data, list)
         return data
     except Exception as e:
@@ -16,9 +17,9 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
-    """Parse questions from text format."""
+    """Load questions from text string based on a specific format."""
     questions = []
-    blocks = text.strip().split('\n\n')  # Each question block separated by 2 newlines
+    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
     for block in blocks:
         lines = block.strip().split('\n')
         question = ''
@@ -40,8 +41,10 @@ def load_questions_from_text(text: str) -> List[Dict]:
                 explanation = line[len('Explanation:'):].strip()
                 current_section = 'explanation'
             elif current_section == 'options' and line:
-                if len(line) > 2 and line[1] == '.':
-                    options.append(line[3:].strip())
+                # Use regex to parse options more robustly
+                m = re.match(r'^[A-Z]\.\s*(.*)', line)
+                if m:
+                    options.append(m.group(1).strip())
             elif current_section == 'explanation':
                 explanation += ' ' + line
         if question and options and answer_letter and explanation:
@@ -56,21 +59,22 @@ def load_questions_from_text(text: str) -> List[Dict]:
                 })
     return questions
 
-def load_questions_from_pdf(file) -> List[Dict]:
-    """Extract text from PDF and parse questions."""
-    try:
-        text = ''
-        with pdfplumber.open(file) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + '\n'
-        return load_questions_from_text(text)
-    except Exception as e:
-        st.error(f"Failed to load PDF questions: {e}")
-        return []
+# If you want to enable PDF upload support, you need to install pdfplumber in your environment.
+# import pdfplumber
+# def load_questions_from_pdf(file) -> List[Dict]:
+#     try:
+#         text = ''
+#         with pdfplumber.open(file) as pdf:
+#             for page in pdf.pages:
+#                 page_text = page.extract_text()
+#                 if page_text:
+#                     text += page_text + '\n'
+#         return load_questions_from_text(text)
+#     except Exception as e:
+#         st.error(f"Failed to load PDF questions: {e}")
+#         return []
 
-# -------- Default Questions --------
+# -- Default Question Bank --
 DEFAULT_QUESTIONS = [
     {
         'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
@@ -86,7 +90,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -------- Initialize Session State --------
+# -- Initialize Session State Variables --
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -108,37 +112,35 @@ if 'review_mode' not in st.session_state:
 if 'answers_log' not in st.session_state:
     st.session_state.answers_log = []
 
-# -------- App UI --------
-
+# -- App Title --
 st.title("adwenBolobo: USMLE Practice App")
 
-with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
-    st.write("For TXT and PDF files, use this exact format:")
+# -- Upload Your Own Questions --
+with st.expander("Upload your own questions (JSON or TXT)"):
+    st.write("For TXT files, use this format:")
     st.code("""
-Question: What is the primary neurotransmitter at the neuromuscular junction?
+Question: <question text>
 Options:
-A. Dopamine
-B. Acetylcholine
-C. GABA
-D. Serotonin
-Answer: B
-Explanation: Acetylcholine stimulates muscle contraction at the neuromuscular junction.
+A. <option1>
+B. <option2>
+C. <option3>
+D. <option4>
+Answer: <correct option letter>
+Explanation: <explanation text>
     """)
-    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt'])  # PDF removed for now
     if uploaded_file is not None:
         file_type = uploaded_file.type
         if file_type == 'application/json':
-            content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_json(content)
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_json(file_content)
         elif file_type == 'text/plain':
-            content = uploaded_file.read().decode("utf-8")
-            loaded_questions = load_questions_from_text(content)
-        elif file_type == 'application/pdf':
-            loaded_questions = load_questions_from_pdf(uploaded_file)
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_text(file_content)
         else:
-            st.error("Unsupported file type. Upload JSON, TXT, or PDF only.")
+            st.error("Unsupported file type. Please upload a JSON or TXT file.")
             loaded_questions = []
-
+        
         if loaded_questions:
             st.session_state.questions = loaded_questions
             st.session_state.score = 0
@@ -147,23 +149,22 @@ Explanation: Acetylcholine stimulates muscle contraction at the neuromuscular ju
             st.session_state.user_answer = None
             st.session_state.review_mode = False
             st.session_state.answers_log = []
-            st.success("Questions uploaded successfully! Starting new test.")
+            st.success("Questions uploaded successfully! Starting fresh.")
             st.experimental_rerun()
         else:
-            st.error("No valid questions found. Check your file format.")
+            st.error("No valid questions found in the file. Please check the format.")
 
-# ------ Review Mode ------
+# -- Review Mode --
 if st.session_state.review_mode:
-    st.header("Review Your Answers")
+    st.header("Review Mode")
     for idx, entry in enumerate(st.session_state.answers_log):
-        st.markdown(f"### Question {idx + 1}")
-        st.write(entry['question'])
-        st.write(f"Your answer: **{entry['user_answer']}**")
+        st.write(f"**Q{idx + 1}:** {entry['question']}")
+        st.write(f"Your answer: {entry['user_answer']}")
         if entry['user_answer'] == entry['correct_answer']:
             st.success("Correct")
         else:
             st.error(f"Incorrect (Correct: {entry['correct_answer']})")
-        st.info(f"Explanation: {entry['explanation']}")
+        st.write(f"Explanation: {entry['explanation']}")
         st.markdown("---")
     if st.button("Restart Test"):
         st.session_state.score = 0
@@ -174,14 +175,15 @@ if st.session_state.review_mode:
         st.session_state.answers_log = []
         st.experimental_rerun()
 
-# ------ Quiz Mode ------
+# -- Quiz Mode --
 else:
     if st.session_state.current_q < len(st.session_state.questions):
         q = st.session_state.questions[st.session_state.current_q]
-        st.markdown(f"### Question {st.session_state.current_q + 1} / {len(st.session_state.questions)}")
+        st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
         st.write(q['question'])
 
-        user_answer = st.radio("Select your answer:", q['options'], key='answer_radio')
+        # Answer Selection
+        user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
         if not st.session_state.submitted:
             if st.button("Submit Answer"):
@@ -197,12 +199,12 @@ else:
                 })
                 st.experimental_rerun()
         else:
+            # Explanation Reveal
             if st.session_state.user_answer == q['answer']:
                 st.success("Correct!")
             else:
                 st.error(f"Incorrect. Correct answer: {q['answer']}")
             st.info(f"Explanation: {q['explanation']}")
-
             if st.button("Next Question"):
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
