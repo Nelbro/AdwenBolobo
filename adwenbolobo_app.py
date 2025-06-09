@@ -1,30 +1,14 @@
 import streamlit as st
+import json
 import re
+import pdfplumber
 import random
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict
 
-# --------------------
-# --- Constants ---
-# --------------------
-DEFAULT_QUESTIONS = [
-    {
-        "question": "What is the primary neurotransmitter at the neuromuscular junction?",
-        "options": ["Dopamine", "Acetylcholine", "GABA", "Serotonin"],
-        "answer": 1,
-        "explanation": "Acetylcholine is the primary neurotransmitter at the neuromuscular junction."
-    },
-    {
-        "question": "Which vitamin deficiency causes scurvy?",
-        "options": ["Vitamin A", "Vitamin B12", "Vitamin C", "Vitamin D"],
-        "answer": 2,
-        "explanation": "Vitamin C deficiency causes scurvy."
-    }
-]
-
-# --------------------
-# --- Helpers ---
-# --------------------
+# ----------------------
+# --- Helper Functions -
+# ----------------------
 
 def init_session_state():
     defaults = {
@@ -35,207 +19,280 @@ def init_session_state():
         'user_answer': None,
         'review_mode': False,
         'answers_log': [],
-        'start_time': time.time(),
+        'randomized': False,
+        'start_time': None,
+        'elapsed_time': 0,
     }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-def parse_questions_from_text(text: str) -> List[Dict]:
-    """
-    Parse questions from a plain text string.
-    Format example per question:
-    Question: What is ...?
-    A. Option 1
-    B. Option 2
-    C. Option 3
-    D. Option 4
-    Answer: B
-    Explanation: ...
-    """
+def load_questions_from_json(json_str: str) -> List[Dict]:
+    try:
+        data = json.loads(json_str)
+        assert isinstance(data, list)
+        valid = []
+        for q in data:
+            if all(k in q for k in ['question', 'options', 'answer', 'explanation']):
+                valid.append(q)
+        if len(valid) < len(data):
+            st.warning("Some questions were skipped due to missing fields.")
+        return valid
+    except Exception as e:
+        st.error(f"Failed to load JSON questions: {e}")
+        return []
+
+def load_questions_from_text(text: str) -> List[Dict]:
     questions = []
-    blocks = re.split(r'\n\s*\n', text.strip())
+    blocks = text.strip().split('\n\n')
     for block in blocks:
         lines = block.strip().split('\n')
-        q_data = {"question": "", "options": [], "answer": None, "explanation": ""}
-        options = []
-        answer_letter = None
+        question, options, answer_letter, explanation = '', [], '', ''
+        current_section = ''
         for line in lines:
             line = line.strip()
-            if line.lower().startswith("question:"):
-                q_data["question"] = line[len("question:"):].strip()
-            elif re.match(r'^[A-Z]\.\s*', line):
-                # Option line like "A. Text"
-                m = re.match(r'^([A-Z])\.\s*(.*)', line)
+            if line.startswith('Question:'):
+                question = line[len('Question:'):].strip()
+                current_section = 'question'
+            elif line.startswith('Options:'):
+                current_section = 'options'
+            elif line.startswith('Answer:'):
+                answer_letter = line[len('Answer:'):].strip()
+                current_section = 'answer'
+            elif line.startswith('Explanation:'):
+                explanation = line[len('Explanation:'):].strip()
+                current_section = 'explanation'
+            elif current_section == 'options' and line:
+                m = re.match(r'^([A-Z])\.\s*(.+)', line)
                 if m:
                     options.append(m.group(2).strip())
-            elif line.lower().startswith("answer:"):
-                ans = line[len("answer:"):].strip().upper()
-                if len(ans) == 1 and 'A' <= ans <= chr(ord('A') + len(options) - 1):
-                    answer_letter = ans
-                else:
-                    answer_letter = None
-            elif line.lower().startswith("explanation:"):
-                q_data["explanation"] = line[len("explanation:"):].strip()
-
-        if q_data["question"] and options and answer_letter:
-            q_data["options"] = options
-            q_data["answer"] = ord(answer_letter) - ord('A')
-            questions.append(q_data)
-        # else skip malformed question block
-
+            elif current_section == 'explanation':
+                explanation += ' ' + line
+        if question and options and answer_letter:
+            answer_index = ord(answer_letter.upper()) - ord('A')
+            if 0 <= answer_index < len(options):
+                answer = options[answer_index]
+            else:
+                answer = None
+            if answer:
+                questions.append({
+                    'question': question,
+                    'options': options,
+                    'answer': answer,
+                    'explanation': explanation.strip() or "No explanation provided."
+                })
+    if not questions:
+        st.warning("No valid questions found. Check your format.")
     return questions
 
-def load_questions_from_uploaded_file(uploaded_file) -> Optional[List[Dict]]:
-    """
-    Supports .txt files with the format described in parse_questions_from_text.
-    """
+def load_questions_from_pdf(file) -> List[Dict]:
     try:
-        content = uploaded_file.read().decode("utf-8")
-        questions = parse_questions_from_text(content)
-        if not questions:
-            st.error("No valid questions found in the uploaded file.")
-            return None
-        return questions
+        text = ''
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + '\n'
+        return load_questions_from_text(text)
     except Exception as e:
-        st.error(f"Failed to load questions: {e}")
-        return None
+        st.error(f"Failed to load PDF questions: {e}")
+        return []
 
-def show_question(q_idx: int):
-    questions = st.session_state.questions
-    if q_idx >= len(questions):
-        st.write("No more questions.")
-        return
-    q = questions[q_idx]
-    st.markdown(f"### Question {q_idx+1} of {len(questions)}")
-    st.write(q["question"])
+# -------------------------
+# --- Default Questions ----
+# -------------------------
+DEFAULT_QUESTIONS = [
+    {
+        'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
+        'options': ['Dopamine', 'Acetylcholine', 'GABA', 'Serotonin'],
+        'answer': 'Acetylcholine',
+        'explanation': 'Acetylcholine stimulates muscle contraction at the neuromuscular junction.'
+    },
+    {
+        'question': 'Which drug is used to reverse opioid overdose?',
+        'options': ['Naloxone', 'Atropine', 'Flumazenil', 'Physostigmine'],
+        'answer': 'Naloxone',
+        'explanation': 'Naloxone is a competitive opioid receptor antagonist used to reverse opioid overdose.'
+    },
+]
 
-    # Radio buttons for options
-    options = q["options"]
-    user_answer = st.radio("Select an answer:", options, key=f"answer_{q_idx}")
+# -------------------------
+# --- UI Design & Logic ----
+# -------------------------
+st.set_page_config("adwenBolobo USMLE Quiz", page_icon="🧠", layout="centered")
+st.markdown("""
+    <style>
+    .title { font-size:2.7em; font-weight:900; color:#2e8b57;}
+    .subtitle { font-size:1.2em; color:#666;}
+    .stButton>button { background: #2e8b57; color: white;}
+    .stProgress > div > div > div > div { background-image: linear-gradient(to right, #2e8b57, #16a085);}
+    </style>
+""", unsafe_allow_html=True)
 
-    if st.button("Submit Answer", key=f"submit_{q_idx}"):
-        st.session_state.submitted = True
-        st.session_state.user_answer = user_answer
-        # Check correctness
-        selected_idx = options.index(user_answer)
-        correct_idx = q["answer"]
-        correct = selected_idx == correct_idx
+st.markdown('<div class="title">adwenBolobo: USMLE Practice App</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Practice with USMLE-style questions. Upload your own, randomize, track your progress, and get instant feedback!</div>', unsafe_allow_html=True)
 
-        if correct:
-            st.session_state.score += 1
+init_session_state()
 
-        st.session_state.answers_log.append({
-            "question_idx": q_idx,
-            "selected": selected_idx,
-            "correct": correct
-        })
+# --- Timer ---
+if st.session_state['start_time'] is None:
+    st.session_state['start_time'] = time.time()
+st.session_state['elapsed_time'] = int(time.time() - st.session_state['start_time'])
 
-    # Show feedback after submission
-    if st.session_state.submitted and st.session_state.current_q == q_idx:
-        selected_idx = options.index(st.session_state.user_answer)
-        correct_idx = q["answer"]
-        if selected_idx == correct_idx:
-            st.success("Correct! 🎉")
+# --- Upload and Randomize ---
+with st.expander("📥 Upload your own questions (JSON, TXT, or PDF)"):
+    st.write("**You can upload your own questions as JSON, TXT, or PDF files.**")
+    st.write("For TXT/PDF files, use this format:")
+    st.code("""
+Question: <question text>
+Options:
+A. <option1>
+B. <option2>
+C. <option3>
+D. <option4>
+Answer: <correct option letter>
+Explanation: <explanation text>
+""")
+    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+    if uploaded_file is not None:
+        file_type = uploaded_file.type
+        if file_type == 'application/json':
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_json(file_content)
+        elif file_type == 'text/plain':
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_text(file_content)
+        elif file_type == 'application/pdf':
+            loaded_questions = load_questions_from_pdf(uploaded_file)
         else:
-            st.error(f"Incorrect. The correct answer is **{options[correct_idx]}**.")
-        st.markdown(f"**Explanation:** {q.get('explanation','No explanation provided.')}")
+            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
+            loaded_questions = []
+        if loaded_questions:
+            st.session_state.questions = loaded_questions
+            st.session_state.score = 0
+            st.session_state.current_q = 0
+            st.session_state.submitted = False
+            st.session_state.user_answer = None
+            st.session_state.review_mode = False
+            st.session_state.answers_log = []
+            st.session_state.randomized = False
+            st.session_state.start_time = time.time()
+            st.success(f"{len(loaded_questions)} questions uploaded successfully! Starting fresh.")
+            st.rerun()
+        else:
+            st.error("No valid questions found in the file. Please check the format.")
 
-def show_progress():
-    progress = (st.session_state.current_q) / len(st.session_state.questions)
-    st.progress(progress)
+st.divider()
 
-def show_navigation():
-    col1, col2, col3, col4 = st.columns([1,1,2,1])
+colA, colB = st.columns([1,1])
+with colA:
+    if not st.session_state.randomized and st.button("🔀 Randomize Questions"):
+        random.shuffle(st.session_state.questions)
+        st.session_state.current_q = 0
+        st.session_state.score = 0
+        st.session_state.answers_log = []
+        st.session_state.submitted = False
+        st.session_state.user_answer = None
+        st.session_state.review_mode = False
+        st.session_state.randomized = True
+        st.session_state.start_time = time.time()
+        st.success("Questions randomized! Starting fresh.")
+        st.rerun()
+with colB:
+    st.info(f"⏱️ Time elapsed: {st.session_state['elapsed_time']} seconds", icon="⏱️")
 
-    with col1:
-        if st.session_state.current_q > 0:
-            if st.button("Back"):
+# --- Review Mode ---
+if st.session_state.review_mode:
+    st.header("📖 Review Mode")
+    for idx, entry in enumerate(st.session_state.answers_log):
+        st.write(f"**Q{idx + 1}:** {entry['question']}")
+        st.write(f"Your answer: {entry['user_answer']}")
+        if entry['user_answer'] == entry['correct_answer']:
+            st.success("✅ Correct")
+        else:
+            st.error(f"❌ Incorrect (Correct: {entry['correct_answer']})")
+        st.info(f"💡 Explanation: {entry['explanation']}")
+        st.markdown("---")
+    if st.button("🔄 Restart Test"):
+        st.session_state.score = 0
+        st.session_state.current_q = 0
+        st.session_state.submitted = False
+        st.session_state.user_answer = None
+        st.session_state.review_mode = False
+        st.session_state.answers_log = []
+        st.session_state.start_time = time.time()
+        st.rerun()
+
+# --- Quiz Mode ---
+else:
+    if st.session_state.current_q < len(st.session_state.questions):
+        q = st.session_state.questions[st.session_state.current_q]
+
+        st.markdown(
+            f"<h3 style='color:#2e8b57;'>Question {st.session_state.current_q + 1} of {len(st.session_state.questions)}</h3>",
+            unsafe_allow_html=True
+        )
+        st.progress((st.session_state.current_q) / len(st.session_state.questions))
+        st.markdown(f"<div style='font-size:1.1em;'><b>{q['question']}</b></div>", unsafe_allow_html=True)
+
+        # Answer Selection
+        user_answer = st.radio("Select your answer:", q['options'], index=0, key=f'answer_radio_{st.session_state.current_q}',
+                              label_visibility="collapsed")
+
+        col1, col2, col3 = st.columns([1,2,1])
+        with col1:
+            if st.session_state.current_q > 0 and st.button("⬅️ Back"):
                 st.session_state.current_q -= 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
-
-    with col2:
-        if st.button("Skip"):
-            if st.session_state.current_q < len(st.session_state.questions) - 1:
+                st.rerun()
+        with col2:
+            if not st.session_state.submitted and st.button("✅ Submit Answer"):
+                st.session_state.user_answer = user_answer
+                st.session_state.submitted = True
+                if user_answer == q['answer']:
+                    st.session_state.score += 1
+                st.session_state.answers_log.append({
+                    'question': q['question'],
+                    'user_answer': user_answer,
+                    'correct_answer': q['answer'],
+                    'explanation': q['explanation']
+                })
+                st.rerun()
+        with col3:
+            if st.button("➡️ Skip"):
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
+                st.rerun()
 
-    with col4:
-        if st.session_state.current_q < len(st.session_state.questions) - 1:
-            if st.button("Next"):
+        if st.session_state.submitted:
+            if st.session_state.user_answer == q['answer']:
+                st.success("🎉 Correct!")
+            else:
+                st.error(f"🙁 Incorrect. Correct answer: {q['answer']}")
+            st.info(f"💡 Explanation: {q['explanation']}")
+            if st.button("Next Question ➡️"):
                 st.session_state.current_q += 1
                 st.session_state.submitted = False
                 st.session_state.user_answer = None
-                st.experimental_rerun()
-
-def show_summary():
-    st.markdown(f"## Quiz Complete! Your score: {st.session_state.score} / {len(st.session_state.questions)}")
-    st.markdown("Review your answers:")
-    for log in st.session_state.answers_log:
-        q = st.session_state.questions[log["question_idx"]]
-        st.markdown(f"**Q:** {q['question']}")
-        selected = q["options"][log["selected"]]
-        correct = q["options"][q["answer"]]
-        if log["correct"]:
-            st.success(f"Your answer: {selected} (Correct)")
-        else:
-            st.error(f"Your answer: {selected} (Incorrect). Correct: {correct}")
-        st.markdown(f"Explanation: {q.get('explanation', 'No explanation provided.')}")
-
-def randomize_questions():
-    random.shuffle(st.session_state.questions)
-    st.session_state.current_q = 0
-    st.session_state.score = 0
-    st.session_state.answers_log = []
-    st.session_state.submitted = False
-    st.session_state.user_answer = None
-    st.experimental_rerun()
-
-def show_timer():
-    elapsed = int(time.time() - st.session_state.start_time)
-    st.write(f"⏱️ Time elapsed: {elapsed // 60}m {elapsed % 60}s")
-
-# --------------------
-# --- Main app ---
-# --------------------
-
-def main():
-    st.title("adwenBolobo Quiz App")
-
-    init_session_state()
-
-    # File uploader
-    uploaded_file = st.file_uploader("Upload your questions (.txt format)", type=["txt"])
-    if uploaded_file:
-        loaded_questions = load_questions_from_uploaded_file(uploaded_file)
-        if loaded_questions:
-            st.session_state.questions = loaded_questions
-            st.session_state.current_q = 0
-            st.session_state.score = 0
-            st.session_state.answers_log = []
-            st.session_state.submitted = False
-            st.session_state.user_answer = None
-            st.session_state.start_time = time.time()
-            st.success(f"Loaded {len(loaded_questions)} questions successfully!")
-
-    # Show timer
-    show_timer()
-
-    # Randomize button
-    if st.button("Randomize Questions"):
-        randomize_questions()
-
-    if st.session_state.current_q >= len(st.session_state.questions):
-        show_summary()
-        return
-
-    show_progress()
-    show_question(st.session_state.current_q)
-    show_navigation()
-
-if __name__ == "__main__":
-    main()
+                st.rerun()
+    else:
+        st.header("🏁 Test Completed!")
+        st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
+        st.info(f"⏱️ Total time: {st.session_state['elapsed_time']} seconds")
+        col_review, col_restart = st.columns([1,1])
+        with col_review:
+            if st.button("📖 Review Answers"):
+                st.session_state.review_mode = True
+                st.rerun()
+        with col_restart:
+            if st.button("🔄 Restart Test"):
+                st.session_state.score = 0
+                st.session_state.current_q = 0
+                st.session_state.submitted = False
+                st.session_state.user_answer = None
+                st.session_state.review_mode = False
+                st.session_state.answers_log = []
+                st.session_state.start_time = time.time()
+                st.rerun()
