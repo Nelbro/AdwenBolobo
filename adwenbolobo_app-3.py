@@ -1,14 +1,13 @@
 import streamlit as st
-import time
 import json
+import pdfplumber  # You missed this import
 from typing import List, Dict
+
 # -- Helper Functions --
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
-    """Load questions from JSON string."""
     try:
         data = json.loads(json_str)
-        # Expected format: List of dicts with 'question', 'options', 'answer', 'explanation'
         assert isinstance(data, list)
         return data
     except Exception as e:
@@ -16,15 +15,11 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
-    """Load questions from text string based on a specific format."""
     questions = []
-    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
+    blocks = text.strip().split('\n\n')
     for block in blocks:
         lines = block.strip().split('\n')
-        question = ''
-        options = []
-        answer_letter = ''
-        explanation = ''
+        question, options, answer_letter, explanation = '', [], '', ''
         current_section = ''
         for line in lines:
             line = line.strip()
@@ -44,6 +39,7 @@ def load_questions_from_text(text: str) -> List[Dict]:
                     options.append(line[3:].strip())
             elif current_section == 'explanation':
                 explanation += ' ' + line
+
         if question and options and answer_letter and explanation:
             answer_index = ord(answer_letter.upper()) - ord('A')
             if 0 <= answer_index < len(options):
@@ -57,7 +53,6 @@ def load_questions_from_text(text: str) -> List[Dict]:
     return questions
 
 def load_questions_from_pdf(file) -> List[Dict]:
-    """Load questions from PDF file using pdfplumber."""
     try:
         text = ''
         with pdfplumber.open(file) as pdf:
@@ -69,14 +64,6 @@ def load_questions_from_pdf(file) -> List[Dict]:
     except Exception as e:
         st.error(f"Failed to load PDF questions: {e}")
         return []
-
-def timer(seconds: int):
-    """Display a countdown timer."""
-    placeholder = st.empty()
-    for remaining in range(seconds, 0, -1):
-        placeholder.markdown(f"⏳ Time left: **{remaining} seconds**")
-        time.sleep(1)
-    placeholder.empty()
 
 # -- Default Question Bank --
 DEFAULT_QUESTIONS = [
@@ -94,7 +81,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -- Initialize Session State Variables --
+# -- Initialize Session State --
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -146,7 +133,7 @@ with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
         else:
             st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
             loaded_questions = []
-        
+
         if loaded_questions:
             st.session_state.questions = loaded_questions
             st.session_state.score = 0
@@ -188,12 +175,6 @@ else:
         st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
         st.write(q['question'])
 
-        # Timer (runs before submission)
-        if not st.session_state.submitted:
-            timer_seconds = 20  # 20 seconds per question
-            timer(timer_seconds)
-
-        # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
         if not st.session_state.submitted:
@@ -210,7 +191,6 @@ else:
                 })
                 st.experimental_rerun()
         else:
-            # Explanation Reveal
             if st.session_state.user_answer == q['answer']:
                 st.success("Correct!")
             else:
@@ -222,7 +202,6 @@ else:
                 st.session_state.user_answer = None
                 st.experimental_rerun()
 
-    # Test Complete
     else:
         st.header("Test Completed!")
         st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
