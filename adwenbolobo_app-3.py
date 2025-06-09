@@ -1,5 +1,4 @@
 import streamlit as st
-import random
 
 # Sample AI-generated question bank
 questions = [
@@ -15,35 +14,50 @@ questions = [
         'answer': 'Naloxone',
         'explanation': 'Naloxone is a competitive opioid receptor antagonist used to rapidly reverse opioid overdose.'
     },
-    # You can add more questions here
 ]
 
 st.title("adwenBolobo: USMLE Practice App")
 
+# Initialize session state variables
 if 'score' not in st.session_state:
     st.session_state.score = 0
+if 'current_question' not in st.session_state:
     st.session_state.current_question = 0
+if 'user_answers' not in st.session_state:
     st.session_state.user_answers = []
+if 'submitted' not in st.session_state:
+    st.session_state.submitted = False
+if 'is_correct' not in st.session_state:
+    st.session_state.is_correct = False
 
+# Main quiz logic
 if st.session_state.current_question < len(questions):
     q = questions[st.session_state.current_question]
     st.write(f"**Question {st.session_state.current_question + 1}:** {q['question']}")
 
-    user_answer = st.radio("Select your answer:", q['options'])
+    user_answer = st.radio("Select your answer:", q['options'], key='answer_radio')
 
-    if st.button("Submit"):
-        st.session_state.user_answers.append(user_answer)
+    if not st.session_state.submitted:
+        if st.button("Submit"):
+            st.session_state.user_answers.append(user_answer)
+            st.session_state.is_correct = (user_answer == q['answer'])
+            if st.session_state.is_correct:
+                st.session_state.score += 1
+            st.session_state.submitted = True
+            st.experimental_rerun()
 
-        if user_answer == q['answer']:
-            st.session_state.score += 1
+    else:
+        if st.session_state.is_correct:
             st.success("Correct!")
         else:
             st.error(f"Incorrect. Correct answer: {q['answer']}")
 
         st.info(f"Explanation: {q['explanation']}")
 
-        st.session_state.current_question += 1
-        st.experimental_rerun()
+        if st.button("Next"):
+            st.session_state.current_question += 1
+            st.session_state.submitted = False
+            st.experimental_rerun()
 
 else:
     st.write("## Test Completed!")
@@ -53,4 +67,5 @@ else:
         st.session_state.score = 0
         st.session_state.current_question = 0
         st.session_state.user_answers = []
+        st.session_state.submitted = False
         st.experimental_rerun()
