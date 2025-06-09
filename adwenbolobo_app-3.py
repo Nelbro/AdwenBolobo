@@ -1,11 +1,12 @@
 import streamlit as st
+import time
 import json
-import pdfplumber 
 from typing import List, Dict
 
 # -- Helper Functions --
 
 def load_questions_from_json(json_str: str) -> List[Dict]:
+    """Load questions from JSON string."""
     try:
         data = json.loads(json_str)
         assert isinstance(data, list)
@@ -15,11 +16,15 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
+    """Load questions from text string based on a specific format."""
     questions = []
-    blocks = text.strip().split('\n\n')
+    blocks = text.strip().split('\n\n')  # Separate questions by double newlines
     for block in blocks:
         lines = block.strip().split('\n')
-        question, options, answer_letter, explanation = '', [], '', ''
+        question = ''
+        options = []
+        answer_letter = ''
+        explanation = ''
         current_section = ''
         for line in lines:
             line = line.strip()
@@ -39,7 +44,6 @@ def load_questions_from_text(text: str) -> List[Dict]:
                     options.append(line[3:].strip())
             elif current_section == 'explanation':
                 explanation += ' ' + line
-
         if question and options and answer_letter and explanation:
             answer_index = ord(answer_letter.upper()) - ord('A')
             if 0 <= answer_index < len(options):
@@ -52,18 +56,13 @@ def load_questions_from_text(text: str) -> List[Dict]:
                 })
     return questions
 
-def load_questions_from_pdf(file) -> List[Dict]:
-    try:
-        text = ''
-        with pdfplumber.open(file) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + '\n'
-        return load_questions_from_text(text)
-    except Exception as e:
-        st.error(f"Failed to load PDF questions: {e}")
-        return []
+def timer(seconds: int):
+    """Display a countdown timer."""
+    placeholder = st.empty()
+    for remaining in range(seconds, 0, -1):
+        placeholder.markdown(f"⏳ Time left: **{remaining} seconds**")
+        time.sleep(1)
+    placeholder.empty()
 
 # -- Default Question Bank --
 DEFAULT_QUESTIONS = [
@@ -81,7 +80,7 @@ DEFAULT_QUESTIONS = [
     },
 ]
 
-# -- Initialize Session State --
+# -- Initialize Session State Variables --
 if 'questions' not in st.session_state:
     st.session_state.questions = DEFAULT_QUESTIONS
 
@@ -107,8 +106,8 @@ if 'answers_log' not in st.session_state:
 st.title("adwenBolobo: USMLE Practice App")
 
 # -- Upload Your Own Questions --
-with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
-    st.write("For TXT and PDF files, use this format:")
+with st.expander("Upload your own questions (JSON or TXT)"):
+    st.write("For TXT files, use this format:")
     st.code("""
     Question: <question text>
     Options:
@@ -119,7 +118,7 @@ with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
     Answer: <correct option letter>
     Explanation: <explanation text>
     """)
-    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt'])
     if uploaded_file is not None:
         file_type = uploaded_file.type
         if file_type == 'application/json':
@@ -128,10 +127,8 @@ with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
         elif file_type == 'text/plain':
             file_content = uploaded_file.read().decode("utf-8")
             loaded_questions = load_questions_from_text(file_content)
-        elif file_type == 'application/pdf':
-            loaded_questions = load_questions_from_pdf(uploaded_file)
         else:
-            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
+            st.error("Unsupported file type. Please upload a JSON or TXT file.")
             loaded_questions = []
 
         if loaded_questions:
@@ -175,6 +172,12 @@ else:
         st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
         st.write(q['question'])
 
+        # Timer (runs before submission)
+        if not st.session_state.submitted:
+            timer_seconds = 20  # 20 seconds per question
+            timer(timer_seconds)
+
+        # Answer Selection
         user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
         if not st.session_state.submitted:
