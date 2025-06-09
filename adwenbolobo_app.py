@@ -1,17 +1,3 @@
-# adwenBolobo: USMLE-Style Question Practice App
-
-## Repository Structure
-
-Your GitHub repository should have the following structure:
-
-adwenbolobo/
-- app.py
-- requirements.txt
-- README.md
-
----
-
-## 1. app.py (Python App)
 
 ```python
 import streamlit as st
@@ -72,34 +58,3 @@ else:
         st.experimental_rerun()
 ```
 
----
-
-## 2. requirements.txt (Python Dependencies)
-
-```txt
-streamlit
-```
-
----
-
-## 3. README.md (Basic Instructions)
-
-```md
-# adwenBolobo: USMLE-Style Question Practice App
-
-This is a simple USMLE practice app built with Streamlit. You can deploy it directly to Streamlit Cloud.
-
-## How to Run Locally
-
-1. Clone this repository.
-2. Run `pip install -r requirements.txt`.
-3. Run `streamlit run app.py`.
-
-## How to Deploy on Streamlit Cloud
-
-1. Upload this repository to GitHub.
-2. Go to https://streamlit.io/cloud.
-3. Click "New App" and connect your GitHub.
-4. Select this repository and `app.py` as the main file.
-5. Click Deploy and start practicing!
-```
