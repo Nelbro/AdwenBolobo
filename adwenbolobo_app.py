@@ -270,3 +270,71 @@ else:
             st.session_state.answers_log = []
             st.session_state.start_time = time.time()
             st.experimental_rerun()
+
+import re
+
+def parse_questions(raw_text):
+    # Split by question numbers (e.g., "1.", "2.", etc.) - crude but works for your text
+    question_chunks = re.split(r'\n\s*\d+\.\s', raw_text)[1:]  # skip empty before first
+
+    questions = []
+
+    for chunk in question_chunks:
+        # Extract question text - up to first option (usually "A )" or "A)")
+        question_match = re.split(r'\nA\s?\)', chunk, maxsplit=1)
+        if len(question_match) < 2:
+            continue  # skip malformed
+
+        question_text = question_match[0].strip().replace('\n', ' ')
+
+        # Extract options (A-E)
+        options_text = question_match[1]
+        options = {}
+        for opt in ['A', 'B', 'C', 'D', 'E']:
+            # Find option text between this option and next (or end)
+            pattern = rf'{opt}\s?\)(.*?)(?=(?:[ABCDE]\s?\))|Correct Answer:|Incorrect Answers:|$)'
+            match = re.search(pattern, options_text, re.DOTALL)
+            if match:
+                option_clean = match.group(1).strip().replace('\n', ' ')
+                options[opt] = option_clean
+
+        # Extract correct answer letter
+        correct_match = re.search(r'Correct Answer:\s*([A-E])', chunk)
+        correct_answer = correct_match.group(1) if correct_match else ''
+
+        # Extract explanation: from Correct Answer up to Educational Objective or next question or end
+        explanation_match = re.search(r'Correct Answer:.*?\.\s*(.*?)(?:Incorrect Answers:|Educational Objective:|$)', chunk, re.DOTALL)
+        explanation = explanation_match.group(1).strip().replace('\n', ' ') if explanation_match else ''
+
+        # Compose question dict
+        question = {
+            'Question': question_text,
+            'Options': options,
+            'Answer': correct_answer,
+            'Explanation': explanation
+        }
+        questions.append(question)
+
+    return questions
+
+def format_question(q):
+    formatted = f"Question: {q['Question']}\nOptions:\n"
+    for opt in ['A', 'B', 'C', 'D', 'E']:
+        if opt in q['Options']:
+            formatted += f"{opt}. {q['Options'][opt]}\n"
+    formatted += f"Answer: {q['Answer']}\n"
+    formatted += f"Explanation: {q['Explanation']}\n\n"
+    return formatted
+
+# Example usage:
+
+raw_text = """<paste your full raw question dump here>"""
+
+questions = parse_questions(raw_text)
+clean_text = ''.join([format_question(q) for q in questions])
+
+with open('cleaned_questions.txt', 'w') as f:
+    f.write(clean_text)
+
+print("Questions cleaned and saved to cleaned_questions.txt")
+
