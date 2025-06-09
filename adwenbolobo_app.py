@@ -1,5 +1,3 @@
-
-```python
 import streamlit as st
 import random
 
@@ -56,5 +54,3 @@ else:
         st.session_state.current_question = 0
         st.session_state.user_answers = []
         st.experimental_rerun()
-```
-
