@@ -1,132 +1,172 @@
 import streamlit as st
-import fitz  
-import re
+import time
+import json
+from typing import List, Dict
 
-def parse_pdf_questions(pdf_bytes):
-    """Parse questions from uploaded PDF bytes.
-    Assumes each question starts with a number and dot,
-    options A-D, Answer: <letter>, Explanation: <text>
-    """
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text()
+# -- Helper functions --
 
-    # Split questions by pattern: number dot space (e.g. 1. , 2. )
-    raw_questions = re.split(r'\n\d+\.\s', full_text)
-    parsed_questions = []
+def load_questions_from_json(json_str: str) -> List[Dict]:
+    """Load questions from JSON string."""
+    try:
+        data = json.loads(json_str)
+        # Expected format: List of dicts with 'question', 'options', 'answer', 'explanation'
+        assert isinstance(data, list)
+        return data
+    except Exception as e:
+        st.error(f"Failed to load questions: {e}")
+        return []
 
-    for raw_q in raw_questions[1:]:  # skip first split which is before question 1
-        try:
-            # Extract question text (up to first option)
-            question_match = re.match(r'(.+?)(?=\nA\.)', raw_q, re.DOTALL)
-            question_text = question_match.group(1).strip()
+def timer(seconds: int):
+    """Simple countdown timer UI."""
+    placeholder = st.empty()
+    for remaining in range(seconds, 0, -1):
+        placeholder.markdown(f"⏳ Time left: **{remaining} seconds**")
+        time.sleep(1)
+    placeholder.empty()
 
-            # Extract options
-            options_match = re.findall(r'\n([A-D])\.\s(.+?)(?=\n[A-D]\.|Answer:)', raw_q + "\nZ.", re.DOTALL)
-            options = [opt[1].strip() for opt in options_match]
+# -- Default question bank --
+DEFAULT_QUESTIONS = [
+    {
+        'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
+        'options': ['Dopamine', 'Acetylcholine', 'GABA', 'Serotonin'],
+        'answer': 'Acetylcholine',
+        'explanation': 'Acetylcholine stimulates muscle contraction at the neuromuscular junction.'
+    },
+    {
+        'question': 'Which drug is used to reverse opioid overdose?',
+        'options': ['Naloxone', 'Atropine', 'Flumazenil', 'Physostigmine'],
+        'answer': 'Naloxone',
+        'explanation': 'Naloxone is a competitive opioid receptor antagonist used to reverse opioid overdose.'
+    },
+]
 
-            # Extract answer letter
-            answer_match = re.search(r'Answer:\s*([A-D])', raw_q)
-            answer_letter = answer_match.group(1).strip()
-
-            # Map answer letter to actual option text
-            answer_index = ord(answer_letter) - ord('A')
-            correct_answer = options[answer_index]
-
-            # Extract explanation
-            explanation_match = re.search(r'Explanation:\s*(.+)', raw_q, re.DOTALL)
-            explanation = explanation_match.group(1).strip() if explanation_match else ""
-
-            parsed_questions.append({
-                'question': question_text,
-                'options': options,
-                'answer': correct_answer,
-                'explanation': explanation
-            })
-        except Exception as e:
-            st.warning(f"Failed to parse a question: {e}")
-
-    return parsed_questions
-
-
-# Initialize session state variables
+# -- Initialize session state variables --
 if 'questions' not in st.session_state:
-    # Default sample questions if no PDF uploaded yet
-    st.session_state.questions = [
-        {
-            'question': 'What is the primary neurotransmitter at the neuromuscular junction?',
-            'options': ['Dopamine', 'Acetylcholine', 'GABA', 'Serotonin'],
-            'answer': 'Acetylcholine',
-            'explanation': 'Acetylcholine stimulates muscle contraction at the neuromuscular junction.'
-        },
-        {
-            'question': 'Which of the following drugs is used to reverse opioid overdose?',
-            'options': ['Naloxone', 'Atropine', 'Flumazenil', 'Physostigmine'],
-            'answer': 'Naloxone',
-            'explanation': 'Naloxone is a competitive opioid receptor antagonist used to rapidly reverse opioid overdose.'
-        },
-    ]
+    st.session_state.questions = DEFAULT_QUESTIONS
+
+if 'score' not in st.session_state:
     st.session_state.score = 0
-    st.session_state.current_question = 0
-    st.session_state.user_answers = []
+
+if 'current_q' not in st.session_state:
+    st.session_state.current_q = 0
+
+if 'submitted' not in st.session_state:
     st.session_state.submitted = False
 
-st.title("adwenBolobo: USMLE Practice App with PDF Upload")
+if 'user_answer' not in st.session_state:
+    st.session_state.user_answer = None
 
-# PDF Upload
-uploaded_pdf = st.file_uploader("Upload your questions PDF", type=["pdf"])
-if uploaded_pdf is not None:
-    pdf_bytes = uploaded_pdf.read()
-    parsed = parse_pdf_questions(pdf_bytes)
-    if parsed:
-        st.session_state.questions = parsed
+if 'review_mode' not in st.session_state:
+    st.session_state.review_mode = False
+
+if 'answers_log' not in st.session_state:
+    # Store user answers for review [{question, user_answer, correct_answer, explanation}]
+    st.session_state.answers_log = []
+
+# -- App Title --
+st.title("adwenBolobo: USMLE Practice App")
+
+# -- Upload your own questions --
+with st.expander("Upload your own questions (JSON format)"):
+    uploaded_file = st.file_uploader("Upload JSON file with questions", type=['json'])
+    if uploaded_file is not None:
+        file_content = uploaded_file.read().decode("utf-8")
+        loaded_questions = load_questions_from_json(file_content)
+        if loaded_questions:
+            st.session_state.questions = loaded_questions
+            st.session_state.score = 0
+            st.session_state.current_q = 0
+            st.session_state.submitted = False
+            st.session_state.user_answer = None
+            st.session_state.review_mode = False
+            st.session_state.answers_log = []
+            st.success("Questions uploaded successfully! Starting fresh.")
+            st.experimental_rerun()
+
+# -- If review mode active --
+if st.session_state.review_mode:
+    st.header("Review Mode")
+    for idx, entry in enumerate(st.session_state.answers_log):
+        st.write(f"**Q{idx + 1}:** {entry['question']}")
+        st.write(f"Your answer: {entry['user_answer']}")
+        if entry['user_answer'] == entry['correct_answer']:
+            st.success("Correct")
+        else:
+            st.error(f"Incorrect (Correct: {entry['correct_answer']})")
+        st.write(f"Explanation: {entry['explanation']}")
+        st.markdown("---")
+    if st.button("Restart Test"):
         st.session_state.score = 0
-        st.session_state.current_question = 0
-        st.session_state.user_answers = []
+        st.session_state.current_q = 0
         st.session_state.submitted = False
-        st.success(f"Loaded {len(parsed)} questions from PDF!")
+        st.session_state.user_answer = None
+        st.session_state.review_mode = False
+        st.session_state.answers_log = []
         st.experimental_rerun()
-    else:
-        st.error("No valid questions found in the uploaded PDF.")
 
-# Main Quiz Logic
-questions = st.session_state.questions
-current = st.session_state.current_question
+else:
+    # -- Quiz mode --
+    if st.session_state.current_q < len(st.session_state.questions):
+        q = st.session_state.questions[st.session_state.current_q]
+        st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
+        st.write(q['question'])
 
-if current < len(questions):
-    q = questions[current]
-    st.write(f"### Question {current + 1} of {len(questions)}")
-    st.write(q['question'])
+        # Show timer only before submission
+        if not st.session_state.submitted:
+            timer_seconds = 20  # Set per question timer (seconds)
+            timer(timer_seconds)
 
-    if not st.session_state.submitted:
-        user_answer = st.radio("Select your answer:", q['options'], key="answer_radio")
+        # Options radio
+        user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
 
-        if st.button("Submit"):
-            st.session_state.submitted = True
-            st.session_state.user_answers.append(user_answer)
+        if not st.session_state.submitted:
+            if st.button("Submit Answer"):
+                st.session_state.user_answer = user_answer
+                st.session_state.submitted = True
 
-            if user_answer == q['answer']:
-                st.session_state.score += 1
+                # Update score
+                if user_answer == q['answer']:
+                    st.session_state.score += 1
+
+                # Log answer for review
+                st.session_state.answers_log.append({
+                    'question': q['question'],
+                    'user_answer': user_answer,
+                    'correct_answer': q['answer'],
+                    'explanation': q['explanation']
+                })
+
+                st.experimental_rerun()
+
+        else:
+            # Show feedback
+            if st.session_state.user_answer == q['answer']:
                 st.success("Correct!")
             else:
                 st.error(f"Incorrect. Correct answer: {q['answer']}")
 
             st.info(f"Explanation: {q['explanation']}")
 
+            if st.button("Next Question"):
+                st.session_state.current_q += 1
+                st.session_state.submitted = False
+                st.session_state.user_answer = None
+                st.experimental_rerun()
+
     else:
-        st.info(f"Explanation: {q['explanation']}")
-        if st.button("Next Question"):
-            st.session_state.current_question += 1
-            st.session_state.submitted = False
+        # Test complete
+        st.header("Test Completed!")
+        st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
+
+        if st.button("Review Answers"):
+            st.session_state.review_mode = True
             st.experimental_rerun()
 
-else:
-    st.write("## Test Completed!")
-    st.write(f"Your Score: {st.session_state.score} / {len(questions)}")
-    if st.button("Restart Test"):
-        st.session_state.score = 0
-        st.session_state.current_question = 0
-        st.session_state.user_answers = []
-        st.session_state.submitted = False
-        st.experimental_rerun()
+        if st.button("Restart Test"):
+            st.session_state.score = 0
+            st.session_state.current_q = 0
+            st.session_state.submitted = False
+            st.session_state.user_answer = None
+            st.session_state.review_mode = False
+            st.session_state.answers_log = []
+            st.experimental_rerun()
