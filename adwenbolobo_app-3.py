@@ -1,5 +1,5 @@
 import streamlit as st
-import fitz  # PyMuPDF
+import fitz  
 import re
 
 def parse_pdf_questions(pdf_bytes):
