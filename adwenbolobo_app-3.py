@@ -1,7 +1,7 @@
 import streamlit as st
 import json
-import pdfplumber
 from typing import List, Dict
+import pdfplumber
 
 # -- Helper Functions --
 
@@ -16,7 +16,7 @@ def load_questions_from_json(json_str: str) -> List[Dict]:
         return []
 
 def load_questions_from_text(text: str) -> List[Dict]:
-    """Load questions from text string based on a specific format."""
+    """Load questions from text string based on specific format."""
     questions = []
     blocks = text.strip().split('\n\n')  # Separate questions by double newlines
     for block in blocks:
@@ -57,10 +57,10 @@ def load_questions_from_text(text: str) -> List[Dict]:
     return questions
 
 def load_questions_from_pdf(file) -> List[Dict]:
-    """Load questions from a PDF file."""
+    """Load questions from PDF file using pdfplumber."""
     try:
+        text = ''
         with pdfplumber.open(file) as pdf:
-            text = ''
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
@@ -111,49 +111,46 @@ if 'answers_log' not in st.session_state:
 # -- App Title --
 st.title("adwenBolobo: USMLE Practice App")
 
-# -- Sidebar for Upload --
-with st.sidebar:
-    st.title("adwenBolobo")
-    st.write("Practice USMLE questions with your own uploads or use defaults.")
-    with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
-        st.write("For TXT and PDF files, use this format:")
-        st.code("""
-        Question: <question text>
-        Options:
-        A. <option1>
-        B. <option2>
-        C. <option3>
-        D. <option4>
-        Answer: <correct option letter>
-        Explanation: <explanation text>
-        """)
-        uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
-        if uploaded_file is not None:
-            file_type = uploaded_file.type
-            if file_type == 'application/json':
-                file_content = uploaded_file.read().decode("utf-8")
-                loaded_questions = load_questions_from_json(file_content)
-            elif file_type == 'text/plain':
-                file_content = uploaded_file.read().decode("utf-8")
-                loaded_questions = load_questions_from_text(file_content)
-            elif file_type == 'application/pdf':
-                loaded_questions = load_questions_from_pdf(uploaded_file)
-            else:
-                st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
-                loaded_questions = []
-
-            if loaded_questions:
-                st.session_state.questions = loaded_questions
-                st.session_state.score = 0
-                st.session_state.current_q = 0
-                st.session_state.submitted = False
-                st.session_state.user_answer = None
-                st.session_state.review_mode = False
-                st.session_state.answers_log = []
-                st.success("Questions uploaded successfully! Starting fresh.")
-                st.experimental_rerun()
-            else:
-                st.error("No valid questions found in the file. Please check the format.")
+# -- Upload Your Own Questions --
+with st.expander("Upload your own questions (JSON, TXT, or PDF)"):
+    st.write("For TXT and PDF files, please use this format:")
+    st.code("""
+Question: <question text>
+Options:
+A. <option1>
+B. <option2>
+C. <option3>
+D. <option4>
+Answer: <correct option letter>
+Explanation: <explanation text>
+    """)
+    uploaded_file = st.file_uploader("Upload questions", type=['json', 'txt', 'pdf'])
+    if uploaded_file is not None:
+        file_type = uploaded_file.type
+        if file_type == 'application/json':
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_json(file_content)
+        elif file_type == 'text/plain':
+            file_content = uploaded_file.read().decode("utf-8")
+            loaded_questions = load_questions_from_text(file_content)
+        elif file_type == 'application/pdf':
+            loaded_questions = load_questions_from_pdf(uploaded_file)
+        else:
+            st.error("Unsupported file type. Please upload a JSON, TXT, or PDF file.")
+            loaded_questions = []
+        
+        if loaded_questions:
+            st.session_state.questions = loaded_questions
+            st.session_state.score = 0
+            st.session_state.current_q = 0
+            st.session_state.submitted = False
+            st.session_state.user_answer = None
+            st.session_state.review_mode = False
+            st.session_state.answers_log = []
+            st.success("Questions uploaded successfully! Starting fresh.")
+            st.experimental_rerun()
+        else:
+            st.error("No valid questions found in the file. Please check the format.")
 
 # -- Review Mode --
 if st.session_state.review_mode:
@@ -179,14 +176,12 @@ if st.session_state.review_mode:
 # -- Quiz Mode --
 else:
     if st.session_state.current_q < len(st.session_state.questions):
-        progress = st.session_state.current_q / len(st.session_state.questions)
-        st.progress(progress)
         q = st.session_state.questions[st.session_state.current_q]
-        st.write(f"**Question {st.session_state.current_q + 1}/{len(st.session_state.questions)}**")
-        st.subheader(q['question'])
+        st.write(f"**Question {st.session_state.current_q + 1} / {len(st.session_state.questions)}**")
+        st.write(q['question'])
 
         # Answer Selection
-        user_answer = st.radio("Select your answer:", q['options'], index=0, key='answer_radio')
+        user_answer = st.radio("Select your answer:", q['options'], key='answer_radio')
 
         if not st.session_state.submitted:
             if st.button("Submit Answer"):
@@ -202,6 +197,7 @@ else:
                 })
                 st.experimental_rerun()
         else:
+            # Show result & explanation
             if st.session_state.user_answer == q['answer']:
                 st.success("Correct!")
             else:
@@ -214,6 +210,7 @@ else:
                 st.experimental_rerun()
 
     else:
+        # Test complete
         st.header("Test Completed!")
         st.write(f"Your score: **{st.session_state.score} / {len(st.session_state.questions)}**")
         if st.button("Review Answers"):
